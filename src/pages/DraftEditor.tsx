@@ -13,7 +13,9 @@ import {
   EyeOff,
   Shield,
   Send,
+  Copy,
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import MDEditor from "@uiw/react-md-editor";
 import "@uiw/react-md-editor/markdown-editor.css";
 import { DraftRow, getDraft, markDraftQiitaSynced, updateDraft } from "../lib/db";
@@ -181,6 +183,30 @@ export default function DraftEditor() {
   const tagCount = parsedTags.length;
   const isPublished = draft.qiita_status === "published";
   const isSynced = !!draft.qiita_item_id;
+  const isNote = draft.platform === "note";
+
+  const copyForNote = async () => {
+    const hashtags = parsedTags.map((t) => `#${t}`).join(" ");
+    const text = hashtags ? `${body}\n\n${hashtags}` : body;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("本文をコピーしました（ハッシュタグも含む）");
+    } catch (e) {
+      toast.error(`コピー失敗: ${e}`);
+    }
+  };
+
+  const openNoteEditor = async () => {
+    await copyForNote();
+    try {
+      await openUrl("https://note.com/notes/new");
+    } catch {
+      window.open("https://note.com/notes/new", "_blank", "noopener,noreferrer");
+    }
+    toast.success("note を開きました。エディタで Cmd+V で貼付してください", {
+      duration: 5000,
+    });
+  };
 
   return (
     <div className="flex flex-col h-screen">
@@ -270,56 +296,85 @@ export default function DraftEditor() {
             </button>
           </div>
 
-          {/* Qiita 同期 / 公開 */}
-          {isSynced && draft.qiita_url && (
-            <a
-              href={draft.qiita_url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-xs text-qiitto-700 underline flex items-center gap-1"
-              title="Qiita で開く"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Qiita で開く
-            </a>
-          )}
-          <button
-            className="btn-secondary text-sm"
-            onClick={() => syncToQiita(isPublished)}
-            disabled={syncing || tagCount === 0 || tagCount > 5}
-            title={
-              tagCount === 0
-                ? "Qiita にはタグが最低1つ必要です"
-                : tagCount > 5
-                  ? "タグは5つ以下にしてください"
-                  : isSynced
-                    ? "Qiita を最新の内容で更新"
-                    : "Qiita に限定共有として下書き作成"
-            }
-          >
-            <Upload className="w-3.5 h-3.5 mr-1" />
-            {isSynced ? "Qiita 更新" : "Qiita 同期"}
-          </button>
-          {isPublished ? (
-            <button
-              className="btn-secondary text-sm"
-              onClick={() => syncToQiita(false, true)}
-              disabled={syncing}
-              title="公開を取り下げて限定共有に戻す（状態のみ変更）"
-            >
-              <EyeOff className="w-3.5 h-3.5 mr-1" />
-              取り下げ
-            </button>
+          {/* プラットフォーム別アクション */}
+          {isNote ? (
+            <>
+              <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">
+                📝 note
+              </span>
+              <button
+                className="btn-secondary text-sm"
+                onClick={copyForNote}
+                title="本文 + ハッシュタグをクリップボードにコピー"
+              >
+                <Copy className="w-3.5 h-3.5 mr-1" />
+                コピー
+              </button>
+              <button
+                className="btn-primary text-sm bg-emerald-600 hover:bg-emerald-700"
+                onClick={openNoteEditor}
+                title="コピー & note.com で書く"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                note で書く
+              </button>
+            </>
           ) : (
-            <button
-              className="btn-primary text-sm bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => setPublishOpen(true)}
-              disabled={syncing || !isSynced}
-              title={isSynced ? "公開する" : "先に Qiita 同期してください"}
-            >
-              <Globe className="w-3.5 h-3.5 mr-1" />
-              公開する
-            </button>
+            <>
+              <span className="text-xs px-2 py-0.5 bg-qiitto-50 text-qiitto-700 rounded font-medium">
+                📘 Qiita
+              </span>
+              {isSynced && draft.qiita_url && (
+                <a
+                  href={draft.qiita_url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-xs text-qiitto-700 underline flex items-center gap-1"
+                  title="Qiita で開く"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Qiita で開く
+                </a>
+              )}
+              <button
+                className="btn-secondary text-sm"
+                onClick={() => syncToQiita(isPublished)}
+                disabled={syncing || tagCount === 0 || tagCount > 5}
+                title={
+                  tagCount === 0
+                    ? "Qiita にはタグが最低1つ必要です"
+                    : tagCount > 5
+                      ? "タグは5つ以下にしてください"
+                      : isSynced
+                        ? "Qiita を最新の内容で更新"
+                        : "Qiita に限定共有として下書き作成"
+                }
+              >
+                <Upload className="w-3.5 h-3.5 mr-1" />
+                {isSynced ? "Qiita 更新" : "Qiita 同期"}
+              </button>
+              {isPublished ? (
+                <button
+                  className="btn-secondary text-sm"
+                  onClick={() => syncToQiita(false, true)}
+                  disabled={syncing}
+                  title="公開を取り下げて限定共有に戻す（状態のみ変更）"
+                >
+                  <EyeOff className="w-3.5 h-3.5 mr-1" />
+                  取り下げ
+                </button>
+              ) : (
+                <button
+                  className="btn-primary text-sm bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => setPublishOpen(true)}
+                  disabled={syncing || !isSynced}
+                  title={isSynced ? "公開する" : "先に Qiita 同期してください"}
+                >
+                  <Globe className="w-3.5 h-3.5 mr-1" />
+                  公開する
+                </button>
+              )}
+            </>
           )}
 
           <button
@@ -388,13 +443,21 @@ export default function DraftEditor() {
             className="input !py-1 text-sm flex-1"
             value={tagsInput}
             onChange={(e) => setTagsInput(e.target.value)}
-            placeholder="カンマ区切り（例: Next.js, Tauri, ClaudeAPI）"
+            placeholder={
+              isNote
+                ? "カンマ区切り（例: 個人開発, AI活用, フリーランス）"
+                : "カンマ区切り（例: Next.js, Tauri, ClaudeAPI）"
+            }
           />
-          <span
-            className={`text-xs ${tagCount > 5 ? "text-red-600 font-medium" : "text-gray-400"}`}
-          >
-            {tagCount}/5
-          </span>
+          {isNote ? (
+            <span className="text-xs text-gray-400">{tagCount} 個</span>
+          ) : (
+            <span
+              className={`text-xs ${tagCount > 5 ? "text-red-600 font-medium" : "text-gray-400"}`}
+            >
+              {tagCount}/5
+            </span>
+          )}
         </div>
       </div>
 

@@ -95,7 +95,8 @@ export async function claudeTestConnection(model?: string): Promise<ClaudeTestRe
 }
 
 /** 素材から記事を生成。20〜60秒程度ブロックする。
- *  Tauri 2 は JS→Rust 引数を camelCase で渡す（Rust 側は自動で snake_case にマップされる）。 */
+ *  Tauri 2 は JS→Rust 引数を camelCase で渡す（Rust 側は自動で snake_case にマップされる）。
+ *  platform は "qiita" | "note"。省略時は "qiita"。 */
 export async function claudeGenerateArticle(args: {
   sourceType: string;
   title?: string | null;
@@ -103,6 +104,7 @@ export async function claudeGenerateArticle(args: {
   styleHint?: string;
   targetLength?: "short" | "medium" | "long";
   model?: string;
+  platform?: "qiita" | "note";
 }): Promise<GenerationResult> {
   return await invoke<GenerationResult>("claude_generate_article", args);
 }

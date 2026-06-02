@@ -32,12 +32,15 @@ export async function loadSettings(): Promise<UserSettings> {
 
 // ---- sources -----------------------------------------------------------------
 
+export type Platform = "qiita" | "note";
+
 export interface SourceRow {
   id: string;
   source_type: string;
   title: string | null;
   raw_content: string;
   metadata: string; // JSON
+  platform: Platform;
   created_at: string;
 }
 
@@ -47,18 +50,20 @@ export async function insertSource(input: {
   title?: string | null;
   raw_content: string;
   metadata?: Record<string, unknown>;
+  platform?: Platform;
 }): Promise<string> {
   const conn = await db();
   const id = crypto.randomUUID();
   await conn.execute(
-    `INSERT INTO sources (id, source_type, title, raw_content, metadata)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO sources (id, source_type, title, raw_content, metadata, platform)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.source_type,
       input.title ?? null,
       input.raw_content,
       JSON.stringify(input.metadata ?? {}),
+      input.platform ?? "qiita",
     ],
   );
   return id;
@@ -164,6 +169,7 @@ export interface DraftRow {
   qiita_private: number | null;
   qiita_status: string | null;
   last_synced_at: string | null;
+  platform: Platform;
   created_at: string;
   updated_at: string;
 }
@@ -173,13 +179,21 @@ export async function insertDraft(input: {
   title: string;
   body: string;
   tags: string[];
+  platform?: Platform;
 }): Promise<string> {
   const conn = await db();
   const id = crypto.randomUUID();
   await conn.execute(
-    `INSERT INTO drafts (id, generation_id, title, body, tags)
-     VALUES (?, ?, ?, ?, ?)`,
-    [id, input.generation_id, input.title, input.body, JSON.stringify(input.tags)],
+    `INSERT INTO drafts (id, generation_id, title, body, tags, platform)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.generation_id,
+      input.title,
+      input.body,
+      JSON.stringify(input.tags),
+      input.platform ?? "qiita",
+    ],
   );
   return id;
 }

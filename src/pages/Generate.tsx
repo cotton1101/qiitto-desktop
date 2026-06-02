@@ -16,6 +16,7 @@ import {
   readClaudeSessions,
 } from "../lib/api";
 import {
+  Platform,
   insertSource,
   insertGenerationPending,
   markGenerationDone,
@@ -32,6 +33,7 @@ interface SaveAndGenerateOptions {
   rawContent: string;
   metadata?: Record<string, unknown>;
   targetLength: TargetLength;
+  platform: Platform;
 }
 
 async function saveAndGenerate(
@@ -44,18 +46,22 @@ async function saveAndGenerate(
     title: opts.title,
     raw_content: opts.rawContent,
     metadata: opts.metadata,
+    platform: opts.platform,
   });
 
   setProgress("生成ジョブを作成中…");
   const generationId = await insertGenerationPending(sourceId);
 
   try {
-    setProgress("Claude API で生成中…（20〜60秒）");
+    setProgress(
+      `Claude API で${opts.platform === "note" ? "note エッセイ" : "Qiita 技術記事"}を生成中…（20〜60秒）`,
+    );
     const result = await claudeGenerateArticle({
       sourceType: opts.sourceType,
       title: opts.title,
       rawContent: opts.rawContent,
       targetLength: opts.targetLength,
+      platform: opts.platform,
     });
 
     const selectedTitle = result.title_options[0] ?? null;
@@ -74,6 +80,7 @@ async function saveAndGenerate(
       title: selectedTitle ?? "(無題)",
       body: result.body_markdown,
       tags: result.suggested_tags,
+      platform: opts.platform,
     });
 
     if (!result.parse_ok) {
@@ -89,9 +96,71 @@ async function saveAndGenerate(
   }
 }
 
+// --- プラットフォーム切替（タブ共通） ---
+
+function PlatformPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Platform;
+  onChange: (v: Platform) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="card !p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-medium text-gray-700">
+          🎯 投稿先プラットフォーム
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onChange("qiita")}
+          disabled={disabled}
+          className={[
+            "rounded border-2 px-3 py-2 text-left transition",
+            value === "qiita"
+              ? "border-qiitto-600 bg-qiitto-50"
+              : "border-gray-200 bg-white hover:border-gray-300",
+            disabled ? "opacity-60 cursor-not-allowed" : "",
+          ].join(" ")}
+        >
+          <div className="font-semibold text-sm flex items-center gap-1">
+            <span className="text-qiitto-600">📘</span> Qiita
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            技術記事 · コード多め · ハマったポイント中心
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("note")}
+          disabled={disabled}
+          className={[
+            "rounded border-2 px-3 py-2 text-left transition",
+            value === "note"
+              ? "border-emerald-600 bg-emerald-50"
+              : "border-gray-200 bg-white hover:border-gray-300",
+            disabled ? "opacity-60 cursor-not-allowed" : "",
+          ].join(" ")}
+        >
+          <div className="font-semibold text-sm flex items-center gap-1">
+            <span className="text-emerald-600">📝</span> note
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            エッセイ調 · 体験と気づき · 個人開発の振り返り
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // --- Claude ログタブ ---
 
-function ClaudeLogTab() {
+function ClaudeLogTab({ platform }: { platform: Platform }) {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ClaudeLogProject[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -175,6 +244,7 @@ function ClaudeLogTab() {
             },
           },
           targetLength,
+          platform,
         },
         (s) => {
           setProgress(s);
@@ -329,7 +399,7 @@ function ClaudeLogTab() {
 
 // --- テキストタブ ---
 
-function TextTab() {
+function TextTab({ platform }: { platform: Platform }) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -347,6 +417,7 @@ function TextTab() {
           title: title.trim() || null,
           rawContent: content,
           targetLength,
+          platform,
         },
         (s) => toast.loading(s, { id: t }),
       );
@@ -412,6 +483,7 @@ function TextTab() {
 
 export default function Generate() {
   const [tab, setTab] = useState<Tab>("claude_log");
+  const [platform, setPlatform] = useState<Platform>("qiita");
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
@@ -421,9 +493,11 @@ export default function Generate() {
           新規生成
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          素材を取り込んで Claude API で記事を生成します（20〜60秒）。
+          素材を取り込んで Claude API で記事を生成します（20〜60秒）。プラットフォームで文体・構成が変わります。
         </p>
       </header>
+
+      <PlatformPicker value={platform} onChange={setPlatform} />
 
       <div className="flex border-b border-gray-200">
         {(
@@ -448,7 +522,11 @@ export default function Generate() {
         ))}
       </div>
 
-      {tab === "claude_log" ? <ClaudeLogTab /> : <TextTab />}
+      {tab === "claude_log" ? (
+        <ClaudeLogTab platform={platform} />
+      ) : (
+        <TextTab platform={platform} />
+      )}
     </div>
   );
 }

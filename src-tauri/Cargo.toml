@@ -1,6 +1,6 @@
 [package]
 name = "qiitto-desktop"
-version = "0.2.0"
+version = "0.3.0"
 description = "qiitto-desktop — Generate Qiita articles from Claude Code dev logs (Tauri 2 + React + Rust)"
 authors = ["Cotton-Web 山田英紀"]
 edition = "2021"

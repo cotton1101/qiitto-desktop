@@ -50,9 +50,18 @@ export default function Published() {
                   <div className="flex items-center justify-between gap-3">
                     <Link
                       to={`/drafts/${d.id}`}
-                      className="font-medium truncate hover:text-qiitto-700"
+                      className="font-medium truncate hover:text-qiitto-700 flex items-center gap-2"
                     >
-                      {d.title || "(無題)"}
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${
+                          d.platform === "note"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-qiitto-50 text-qiitto-700"
+                        }`}
+                      >
+                        {d.platform === "note" ? "📝 note" : "📘 Qiita"}
+                      </span>
+                      <span className="truncate">{d.title || "(無題)"}</span>
                     </Link>
                     {d.qiita_url && (
                       <a

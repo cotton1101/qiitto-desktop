@@ -1,7 +1,7 @@
 {
   "name": "qiitto-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Generate Qiita articles from Claude Code dev logs — Tauri 2 + React + Rust",
   "license": "MIT",
   "author": "Cotton-Web 山田英紀",

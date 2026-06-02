@@ -53,6 +53,15 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "qiitto-desktop ${{ github.ref_name }}"
           releaseBody: |
+            ## 🆕 v0.3.0 — note 対応
+
+            **複数プラットフォーム対応**：1 つの素材から Qiita と note の両方の記事を生成できるようになりました。
+
+            - 📘 **Qiita モード**：技術記事 / コード多め / ハマったポイント中心（従来通り）
+            - 📝 **note モード**：エッセイ調 / 体験と気づき / ナラティブ構成 / コード最小限
+
+            note 向けに生成した記事は「📋 コピー & note で書く」ボタンで note.com の新規投稿画面が開きます（手動貼付）。
+
             ## 📥 インストール（3 方法から選択）
 
             ### 方法 1: ワンライナー（最も簡単）
@@ -70,9 +79,9 @@ jobs:
             xattr -cr /Applications/qiitto-desktop.app && open /Applications/qiitto-desktop.app
             ```
 
-            > ⚠️ Apple Developer ID 未取得のため Gatekeeper にブロックされます。v0.3 で署名+Notarization 対応予定。
+            > ⚠️ Apple Developer ID 未取得のため Gatekeeper にブロックされます。Apple Developer Program 加入後に署名+Notarization 対応予定。
 
-            **既に v0.2.0 以降をご利用の方**: 設定 → 「アップデートを確認」 から自動更新できます。
+            **既に v0.2.0 以降をご利用の方**: 設定 → 「アップデートを確認」から自動更新できます（Gatekeeper 不要）。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
