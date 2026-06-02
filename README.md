@@ -33,20 +33,45 @@
 
 ---
 
-## スクリーンショット
+## ✅ 実装済み機能（v0.4.0 時点）
 
-> （v0.2 で同梱予定）
+### v0.1 — 基盤
+
+1. **Claude Code ログ取込** — `~/.claude/projects/*.jsonl` を Rust の `std::fs` で直接読込、`## User:` / `## Claude:` 形式に整形
+2. **Claude API 呼び出し** — Rust 側 reqwest で `/v1/messages` 直叩き。API キーは JS 側に露出しない設計
+3. **Markdown エディタ + Qiita 風プレビュー** — 左 [`@uiw/react-md-editor`](https://github.com/uiwjs/react-md-editor) ＋ 右 [react-markdown](https://github.com/remarkjs/react-markdown)（`:::note info|warn|alert` 対応、`highlight.js` シンタックスハイライト、`remark-gfm` で表・チェックボックス）
+4. **Qiita API v2 同期** — create/update（既定で限定共有 `private:true`）→ 2 段階モーダルで `private:false` 公開 → 取り下げ可
+5. **macOS DMG 配布** — Universal Binary（Intel + Apple Silicon）
+
+### v0.2.0 — 公開前チェック + 自動アップデート
+
+6. 🛡 **公開前スキャン** — 既定 6 ルール（API キー / メール / IPv4 / Zero-width 文字 等）+ ユーザー追加ルールで機密情報検出
+7. ✨ **AI 書き換え** — 検出ワードを Claude API で伏字化（before/after 比較モーダル）
+8. 🐦 **X 投稿生成** — 記事から X ポスト案を 3 パターン生成、コピー or X intent URL で投稿
+9. 🔄 **自動アップデーター** — `tauri-plugin-updater` + Ed25519 署名検証 → Settings から1クリック更新（Gatekeeper 不要）
+
+### v0.3.x — マルチプラットフォーム
+
+10. 📝 **note 対応** — note エッセイ調プロンプト + コピー & note.com 起動ボタン
+11. 🩹 **アップデートボタン修正**（v0.3.1）— Tauri 2 WebView の `confirm()` 不具合を回避
+
+### v0.4.0 — 並列同時生成
+
+12. ⚡ **複数プラットフォーム並列生成** — 同じ素材から Qiita + note を Claude API 並列呼出で **1 操作・約 30〜60 秒** で 2 件生成
 
 ---
 
-## 主要機能
+## 🛣 ロードマップ（実検討中）
 
-1. **取込** — Claude Code のセッションログ（`~/.claude/projects/*.jsonl`）を一覧から選択 → User/Claude 発言を `## User:` / `## Claude:` 形式で整形
-2. **生成** — Anthropic Claude API（Sonnet 4.6 既定）で `TITLE_OPTIONS` / `SUGGESTED_TAGS` / `ARTICLE_BODY` の構造化応答 → 自動パース
-3. **編集** — 左 [`@uiw/react-md-editor`](https://github.com/uiwjs/react-md-editor) ＋ 右 [react-markdown](https://github.com/remarkjs/react-markdown) ベースの Qiita 風プレビュー（`:::note info|warn|alert` 対応、コード `highlight.js` シンタックスハイライト、`remark-gfm` で表・チェックボックス）
-4. **Qiita 同期** — Qiita API v2 で create/update（既定で限定共有 `private:true`）
-5. **公開** — 2 段階確認モーダル → `private:false` で公開
-6. **取り下げ** — `private:true` に戻す
+| 優先 | 項目 | 状態 | 詳細 |
+|---|---|---|---|
+| ⭐⭐⭐ | Apple Developer ID + Notarization | 月末売上後 | Gatekeeper 警告を完全解消（$99/年）|
+| ⭐⭐ | スクリーンショット README 同梱 | 未着手 | 各機能の screenshot をドキュメント化 |
+| ⭐⭐ | Zenn 対応 | 検討中 | GitHub 連携で記事 push（Markdown 直公開可）|
+| ⭐ | dev.to 対応 | 検討中 | 公式 API あり・自動投稿可 |
+| ⭐ | 月間トークン使用量ダッシュボード | 検討中 | Anthropic API のコスト可視化 |
+| ⭐ | iCloud / Dropbox 同期 | 検討中 | 複数 Mac で下書き共有 |
+| - | Windows / Linux ビルド | 未検証 | Tauri 的には可能、要テスト |
 
 ---
 
@@ -108,13 +133,13 @@ xattr -cr /Applications/qiitto-desktop.app && open /Applications/qiitto-desktop.
 
 ### ⚠️ なぜこの手順が必要？
 
-v0.2.x 時点で qiitto-desktop は **Apple Developer ID 署名なしで配布** されています。そのため macOS の Gatekeeper が「壊れている可能性があるためゴミ箱に移動」と表示し、起動を拒否します（**ファイル自体は問題ありません**。Tauri の Ed25519 自動アップデート署名で改ざん検証は別途されています）。
+現バージョンの qiitto-desktop は **Apple Developer ID 署名なしで配布** されています。そのため macOS の Gatekeeper が「壊れている可能性があるためゴミ箱に移動」と表示し、起動を拒否します（**ファイル自体は問題ありません**。Tauri の Ed25519 自動アップデート署名で改ざん検証は別途されています）。
 
-**v0.3 以降で Apple Developer Program 加入 → Notarization 対応予定**です。それまでは上記いずれかの方法でインストールしてください。
+**Cotton-Web 月末売上後に Apple Developer Program 加入 → Notarization 対応予定**です。それまでは上記いずれかの方法でインストールしてください。
 
 ### 🔄 次回以降のアップデート
 
-v0.2.0 以降をインストール済みなら、アプリ内の **設定 → 「アップデートを確認」** から自動更新できます（Gatekeeper も発動しません）。
+v0.2.0 以降をインストール済みなら、アプリ内の **設定 → 「アップデートを確認」** から自動更新できます（Gatekeeper も発動しません）。 **v0.3.0 の自動アップデートボタンには不具合がありました — v0.3.1 以降で解消済み**です。
 
 ---
 
@@ -160,12 +185,13 @@ pnpm tauri build
 
 ## 設計ハイライト（実装で踏んだ罠）
 
-開発過程で踏んだ罠と解法を Qiita 記事化予定。要点：
+開発過程で踏んだ罠と解法：
 
 1. **Tauri 2 の引数自動 camelCase 変換は struct の中身まで行かない** — トップレベル引数は camelCase ↔ snake_case 自動変換だが、ネストした struct のフィールドは serde 任せ。`#[serde(rename_all = "camelCase")]` を struct に明示する必要あり。これに気づかず Qiita 記事が POST で重複作成された。
 2. **macOS Keychain は dev では脆い** — 未署名バイナリが再ビルドのたびに ACL を失い、保存した API キーが読めなくなる。ファイル + 600 perm に切替えで解決。
 3. **Qiita API PATCH のタイトル重複検査** — 同タイトルの限定共有が別に存在すると 422 で拒否される。Qiita 側で削除するか、タイトルを少し変える。
 4. **`@uiw/react-md-editor` + 自前 Qiita プレビュー** — エディタ標準のプレビューは Qiita スタイルではないので、`preview="edit"` で抑止し `react-markdown + remark-gfm + rehype-highlight + rehype-raw` で自前プレビューを並べる。`:::note` は regex 前処理で `<div class="qiita-note-*">` に変換。
+5. **Tauri 2 WebView の `window.confirm()` 不具合**（v0.3.1 で修正）— Wry の WebKit ラッパーが silently 無視するため、確認ダイアログが必要な箇所は React 自前モーダル + Tauri Plugin Dialog で代替する必要あり。
 
 ---
 
@@ -173,17 +199,17 @@ pnpm tauri build
 
 - 第1弾 [Claude Code で作ったツールで、Claude Code の開発ログを Qiita 記事にする](https://qiita.com/sorabcjanne1/items/095eeb211d5617e1649b)
 - 第2弾 [続編](https://qiita.com/sorabcjanne1/items/a9e414350978238008d3)
-- 第3弾（予定）「Web 版を Tauri デスクトップに作り直した話 — Rust 初挑戦の躓きまとめ」
+- 第3弾「Web 版を Tauri デスクトップに作り直した話 — Rust 初挑戦の躓きまとめ」（公開済み・近日 URL 追記）
 
 ---
 
 ## このリポジトリについて
 
 - **シングルユーザ設計**：OS ユーザー = アプリユーザー。サインアップなし。Anthropic / Qiita のキーは OS のホームディレクトリ内（600 perm）に保存
-- **スナップショット公開**：開発当時の commit 履歴は含まないクリーン公開。今後の開発はこのリポジトリで継続予定
+- **継続開発**：v0.1 〜 v0.4.x までこのリポジトリで継続。`main` ブランチ + タグ駆動リリース（CI が自動ビルド・公開）
 - **メンテナンス**：Cotton-Web の自社運用に必要な範囲で実施。Issue / PR は歓迎しますが対応保証なし
-- **未署名**：v0.1 は ad-hoc 未署名 `.app`。Developer ID 取得後の署名 + Notarization は v0.2 以降を予定
-- **動作環境**：macOS（Intel）で動作確認済み。ARM ターゲットビルドは未検証（`cargo build --target aarch64-apple-darwin` で可能なはず）
+- **未署名**：現バージョンは ad-hoc 未署名 `.app`。Apple Developer ID 取得後（Cotton-Web 月末売上以降）の署名 + Notarization 対応を予定
+- **動作環境**：macOS Universal（Intel + Apple Silicon どちらも対応）で動作確認済み。Windows/Linux は未検証
 
 ---
 
