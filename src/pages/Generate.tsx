@@ -7,6 +7,7 @@ import {
   RefreshCw,
   FolderOpen,
   Wand2,
+  Check,
 } from "lucide-react";
 import {
   ClaudeLogProject,
@@ -33,39 +34,24 @@ interface SaveAndGenerateOptions {
   rawContent: string;
   metadata?: Record<string, unknown>;
   targetLength: TargetLength;
-  platform: Platform;
 }
 
-async function saveAndGenerate(
+async function generateOnePlatform(
+  sourceId: string,
   opts: SaveAndGenerateOptions,
-  setProgress: (s: string) => void,
+  platform: Platform,
 ): Promise<string> {
-  setProgress("素材を保存中…");
-  const sourceId = await insertSource({
-    source_type: opts.sourceType,
-    title: opts.title,
-    raw_content: opts.rawContent,
-    metadata: opts.metadata,
-    platform: opts.platform,
-  });
-
-  setProgress("生成ジョブを作成中…");
   const generationId = await insertGenerationPending(sourceId);
-
   try {
-    setProgress(
-      `Claude API で${opts.platform === "note" ? "note エッセイ" : "Qiita 技術記事"}を生成中…（20〜60秒）`,
-    );
     const result = await claudeGenerateArticle({
       sourceType: opts.sourceType,
       title: opts.title,
       rawContent: opts.rawContent,
       targetLength: opts.targetLength,
-      platform: opts.platform,
+      platform,
     });
 
     const selectedTitle = result.title_options[0] ?? null;
-    setProgress("結果を保存中…");
     await markGenerationDone(generationId, {
       title_options: result.title_options,
       suggested_tags: result.suggested_tags,
@@ -80,12 +66,12 @@ async function saveAndGenerate(
       title: selectedTitle ?? "(無題)",
       body: result.body_markdown,
       tags: result.suggested_tags,
-      platform: opts.platform,
+      platform,
     });
 
     if (!result.parse_ok) {
       toast(
-        "応答パースに失敗しました（全文を本文に入れた fallback）。タイトル/タグは手動で設定してください。",
+        `${platform === "note" ? "note" : "Qiita"}の応答パース失敗（fallback）。タイトル/タグは手動で設定してください。`,
         { icon: "⚠️", duration: 6000 },
       );
     }
@@ -96,63 +82,119 @@ async function saveAndGenerate(
   }
 }
 
-// --- プラットフォーム切替（タブ共通） ---
+/** 1 つの素材から 1 つ or 複数のプラットフォーム向けに記事を生成する。
+ *  複数プラットフォーム指定時は Claude API を並列呼び出しする（wall-clock 約 30〜60秒）。 */
+async function saveAndGenerateMulti(
+  opts: SaveAndGenerateOptions,
+  platforms: Platform[],
+  setProgress: (s: string) => void,
+): Promise<string[]> {
+  setProgress("素材を保存中…");
+  const sourceId = await insertSource({
+    source_type: opts.sourceType,
+    title: opts.title,
+    raw_content: opts.rawContent,
+    metadata: opts.metadata,
+  });
+
+  const label =
+    platforms.length === 1
+      ? platforms[0] === "note"
+        ? "note エッセイ"
+        : "Qiita 技術記事"
+      : "Qiita + note を並列";
+  setProgress(`Claude API で ${label} 生成中…（20〜60秒）`);
+
+  return await Promise.all(
+    platforms.map((p) => generateOnePlatform(sourceId, opts, p)),
+  );
+}
+
+// --- プラットフォーム切替（タブ共通・複数選択可） ---
 
 function PlatformPicker({
-  value,
+  values,
   onChange,
   disabled,
 }: {
-  value: Platform;
-  onChange: (v: Platform) => void;
+  values: Set<Platform>;
+  onChange: (next: Set<Platform>) => void;
   disabled?: boolean;
 }) {
+  const toggle = (p: Platform) => {
+    const next = new Set(values);
+    if (next.has(p)) {
+      if (next.size === 1) return; // 最低 1 つは選択
+      next.delete(p);
+    } else {
+      next.add(p);
+    }
+    onChange(next);
+  };
+
   return (
     <div className="card !p-3">
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium text-gray-700">
           🎯 投稿先プラットフォーム
+          <span className="text-xs text-gray-400 font-normal ml-2">
+            （複数選択可・最低 1 つ）
+          </span>
         </span>
+        {values.size === 2 && (
+          <span className="text-xs text-emerald-600 font-medium animate-pulse">
+            ⚡ Claude API を並列で 2 件生成
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onChange("qiita")}
-          disabled={disabled}
-          className={[
-            "rounded border-2 px-3 py-2 text-left transition",
-            value === "qiita"
-              ? "border-qiitto-600 bg-qiitto-50"
-              : "border-gray-200 bg-white hover:border-gray-300",
-            disabled ? "opacity-60 cursor-not-allowed" : "",
-          ].join(" ")}
-        >
-          <div className="font-semibold text-sm flex items-center gap-1">
-            <span className="text-qiitto-600">📘</span> Qiita
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            技術記事 · コード多め · ハマったポイント中心
-          </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("note")}
-          disabled={disabled}
-          className={[
-            "rounded border-2 px-3 py-2 text-left transition",
-            value === "note"
-              ? "border-emerald-600 bg-emerald-50"
-              : "border-gray-200 bg-white hover:border-gray-300",
-            disabled ? "opacity-60 cursor-not-allowed" : "",
-          ].join(" ")}
-        >
-          <div className="font-semibold text-sm flex items-center gap-1">
-            <span className="text-emerald-600">📝</span> note
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            エッセイ調 · 体験と気づき · 個人開発の振り返り
-          </div>
-        </button>
+        {(
+          [
+            {
+              id: "qiita" as const,
+              icon: "📘",
+              label: "Qiita",
+              desc: "技術記事 · コード多め · ハマったポイント中心",
+              activeBorder: "border-qiitto-600",
+              activeBg: "bg-qiitto-50",
+              checkColor: "text-qiitto-600",
+            },
+            {
+              id: "note" as const,
+              icon: "📝",
+              label: "note",
+              desc: "エッセイ調 · 体験と気づき · 個人開発の振り返り",
+              activeBorder: "border-emerald-600",
+              activeBg: "bg-emerald-50",
+              checkColor: "text-emerald-600",
+            },
+          ] as const
+        ).map((p) => {
+          const active = values.has(p.id);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => toggle(p.id)}
+              disabled={disabled}
+              className={[
+                "rounded border-2 px-3 py-2 text-left transition relative",
+                active
+                  ? `${p.activeBorder} ${p.activeBg}`
+                  : "border-gray-200 bg-white hover:border-gray-300",
+                disabled ? "opacity-60 cursor-not-allowed" : "",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm flex items-center gap-1">
+                  <span>{p.icon}</span> {p.label}
+                </span>
+                {active && <Check className={`w-4 h-4 ${p.checkColor}`} />}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">{p.desc}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -160,7 +202,7 @@ function PlatformPicker({
 
 // --- Claude ログタブ ---
 
-function ClaudeLogTab({ platform }: { platform: Platform }) {
+function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ClaudeLogProject[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -226,7 +268,8 @@ function ClaudeLogTab({ platform }: { platform: Platform }) {
     setProgress("");
     const t = toast.loading("素材を保存中…");
     try {
-      const draftId = await saveAndGenerate(
+      const platformList = Array.from(platforms);
+      const draftIds = await saveAndGenerateMulti(
         {
           sourceType: "claude_log",
           title: `Claude Code: ${selected.split("/").slice(-1)[0] || selected}`,
@@ -244,15 +287,24 @@ function ClaudeLogTab({ platform }: { platform: Platform }) {
             },
           },
           targetLength,
-          platform,
         },
+        platformList,
         (s) => {
           setProgress(s);
           toast.loading(s, { id: t });
         },
       );
-      toast.success("記事を生成しました", { id: t });
-      navigate(`/drafts/${draftId}`);
+
+      if (draftIds.length === 1) {
+        toast.success("記事を生成しました", { id: t });
+        navigate(`/drafts/${draftIds[0]}`);
+      } else {
+        toast.success(
+          `${draftIds.length} 件の記事を生成しました（Qiita + note）`,
+          { id: t, duration: 5000 },
+        );
+        navigate("/drafts");
+      }
     } catch (e) {
       toast.error(`生成失敗: ${e}`, { id: t });
     } finally {
@@ -383,7 +435,11 @@ function ClaudeLogTab({ platform }: { platform: Platform }) {
               disabled={busy || !result.content.trim()}
             >
               <Wand2 className="w-3.5 h-3.5 mr-1" />
-              {busy ? progress || "生成中…" : "保存して記事を生成"}
+              {busy
+                ? progress || "生成中…"
+                : platforms.size === 1
+                  ? "保存して記事を生成"
+                  : `保存して ${platforms.size} 件同時生成`}
             </button>
           </div>
           <div className="border border-gray-200 rounded bg-gray-50 p-3 max-h-96 overflow-auto">
@@ -399,7 +455,7 @@ function ClaudeLogTab({ platform }: { platform: Platform }) {
 
 // --- テキストタブ ---
 
-function TextTab({ platform }: { platform: Platform }) {
+function TextTab({ platforms }: { platforms: Set<Platform> }) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -411,18 +467,27 @@ function TextTab({ platform }: { platform: Platform }) {
     setBusy(true);
     const t = toast.loading("素材を保存中…");
     try {
-      const draftId = await saveAndGenerate(
+      const platformList = Array.from(platforms);
+      const draftIds = await saveAndGenerateMulti(
         {
           sourceType: "text",
           title: title.trim() || null,
           rawContent: content,
           targetLength,
-          platform,
         },
+        platformList,
         (s) => toast.loading(s, { id: t }),
       );
-      toast.success("記事を生成しました", { id: t });
-      navigate(`/drafts/${draftId}`);
+      if (draftIds.length === 1) {
+        toast.success("記事を生成しました", { id: t });
+        navigate(`/drafts/${draftIds[0]}`);
+      } else {
+        toast.success(
+          `${draftIds.length} 件の記事を生成しました（Qiita + note）`,
+          { id: t, duration: 5000 },
+        );
+        navigate("/drafts");
+      }
     } catch (e) {
       toast.error(`生成失敗: ${e}`, { id: t });
     } finally {
@@ -475,7 +540,11 @@ function TextTab({ platform }: { platform: Platform }) {
         disabled={busy || !content.trim()}
       >
         <Wand2 className="w-3.5 h-3.5 mr-1" />
-        {busy ? "生成中…" : "保存して記事を生成"}
+        {busy
+          ? "生成中…"
+          : platforms.size === 1
+            ? "保存して記事を生成"
+            : `保存して ${platforms.size} 件同時生成`}
       </button>
     </div>
   );
@@ -483,7 +552,9 @@ function TextTab({ platform }: { platform: Platform }) {
 
 export default function Generate() {
   const [tab, setTab] = useState<Tab>("claude_log");
-  const [platform, setPlatform] = useState<Platform>("qiita");
+  const [platforms, setPlatforms] = useState<Set<Platform>>(
+    new Set(["qiita"]),
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
@@ -493,11 +564,11 @@ export default function Generate() {
           新規生成
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          素材を取り込んで Claude API で記事を生成します（20〜60秒）。プラットフォームで文体・構成が変わります。
+          素材を取り込んで Claude API で記事を生成します。プラットフォームを複数選ぶと、同じ素材から並列で複数記事を一度に生成できます。
         </p>
       </header>
 
-      <PlatformPicker value={platform} onChange={setPlatform} />
+      <PlatformPicker values={platforms} onChange={setPlatforms} />
 
       <div className="flex border-b border-gray-200">
         {(
@@ -523,9 +594,9 @@ export default function Generate() {
       </div>
 
       {tab === "claude_log" ? (
-        <ClaudeLogTab platform={platform} />
+        <ClaudeLogTab platforms={platforms} />
       ) : (
-        <TextTab platform={platform} />
+        <TextTab platforms={platforms} />
       )}
     </div>
   );
