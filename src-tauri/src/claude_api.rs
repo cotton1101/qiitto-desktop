@@ -212,27 +212,78 @@ fn http_client(timeout: u64) -> AppResult<Client> {
         .map_err(AppError::from)
 }
 
-fn anthropic_request(client: &Client, api_key: &str, body: Value) -> reqwest::RequestBuilder {
-    client
-        .post(ANTHROPIC_API_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", ANTHROPIC_API_VERSION)
-        .header("content-type", "application/json")
-        .json(&body)
-}
+/// 429 (rate limit) を自動リトライする Anthropic API 呼び出し。
+///
+/// - 成功 → response body JSON
+/// - 429 + リトライ余地あり → `retry-after` ヘッダ優先、無ければ 5s/15s/45s の指数バックオフ
+///   + 0〜999ms のジッター（並列リクエストの衝突を緩和）で待機して再試行
+/// - リトライ上限到達 or その他のエラー → 親切メッセージで AppError::External
+async fn anthropic_call_with_retry(
+    client: &Client,
+    api_key: &str,
+    body: &Value,
+    max_retries: u32,
+) -> AppResult<Value> {
+    let mut attempt: u32 = 0;
+    loop {
+        let resp = client
+            .post(ANTHROPIC_API_URL)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", ANTHROPIC_API_VERSION)
+            .header("content-type", "application/json")
+            .json(body)
+            .send()
+            .await?;
 
-async fn anthropic_error_for_status(resp: reqwest::Response) -> AppResult<Value> {
-    let status = resp.status();
-    let json: Value = resp.json().await?;
-    if !status.is_success() {
+        let status = resp.status();
+        if status.is_success() {
+            return resp.json::<Value>().await.map_err(AppError::from);
+        }
+
+        // 429 = レート制限 → リトライ可能
+        if status.as_u16() == 429 && attempt < max_retries {
+            let retry_after_secs: u64 = resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(match attempt {
+                    0 => 5,
+                    1 => 15,
+                    _ => 45,
+                });
+
+            // 並列リクエストの衝突を緩和するためのジッター（0〜999ms）
+            let jitter_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| u64::from(d.subsec_nanos() / 1_000_000))
+                .unwrap_or(0);
+            tokio::time::sleep(Duration::from_millis(
+                retry_after_secs * 1000 + jitter_ms,
+            ))
+            .await;
+            attempt += 1;
+            continue;
+        }
+
+        // 非リトライ or リトライ上限到達 → エラー化
+        let json: Value = resp.json().await.map_err(AppError::from)?;
         let msg = json
             .get("error")
             .and_then(|e| e.get("message"))
             .and_then(|m| m.as_str())
             .unwrap_or("Anthropic API エラー");
+
+        if status.as_u16() == 429 {
+            return Err(AppError::External(format!(
+                "レート制限に達しました（{} 回試行してもダメでした）。対処:\n  ① 「最大文字数」を 30000 以下に下げる（新規生成画面）\n  ② Qiita か note のどちらか単独で生成する（並列をやめる）\n  ③ 1〜2 分待ってから再実行\n  ④ Tier 2 へアップグレード（$40 デポジット）: https://console.anthropic.com/settings/billing\n元エラー: {}",
+                attempt + 1,
+                msg
+            )));
+        }
+
         return Err(AppError::External(format!("[{}] {}", status, msg)));
     }
-    Ok(json)
 }
 
 fn extract_response_text(json: &Value) -> String {
@@ -291,8 +342,8 @@ pub async fn claude_test_connection(
         "messages": [{"role": "user", "content": "ping"}]
     });
 
-    let resp = anthropic_request(&client, &api_key, body).send().await?;
-    let json = anthropic_error_for_status(resp).await?;
+    // 接続テストは軽いので 1 回だけリトライ
+    let json = anthropic_call_with_retry(&client, &api_key, &body, 1).await?;
 
     Ok(TestConnectionResult {
         model: json
@@ -344,8 +395,8 @@ pub async fn claude_generate_article(
         "messages": [{"role": "user", "content": prompt}]
     });
 
-    let resp = anthropic_request(&client, &api_key, body).send().await?;
-    let json = anthropic_error_for_status(resp).await?;
+    // 大型素材なので 429 は十分起こり得る → 3 回までリトライ
+    let json = anthropic_call_with_retry(&client, &api_key, &body, 3).await?;
 
     let text = extract_response_text(&json);
     let tokens_used = extract_tokens_used(&json);
@@ -423,8 +474,7 @@ pub async fn claude_rewrite_for_publish(
         "messages": [{"role": "user", "content": prompt}]
     });
 
-    let resp = anthropic_request(&client, &api_key, req_body).send().await?;
-    let json = anthropic_error_for_status(resp).await?;
+    let json = anthropic_call_with_retry(&client, &api_key, &req_body, 3).await?;
     let text = extract_response_text(&json);
 
     // 万一全体が ``` で囲まれていた場合に剥がす
@@ -496,8 +546,7 @@ pub async fn claude_generate_tweets(
         "messages": [{"role": "user", "content": prompt}]
     });
 
-    let resp = anthropic_request(&client, &api_key, req_body).send().await?;
-    let json = anthropic_error_for_status(resp).await?;
+    let json = anthropic_call_with_retry(&client, &api_key, &req_body, 2).await?;
     let text = extract_response_text(&json);
 
     let tweets: Vec<String> = text
