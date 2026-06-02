@@ -78,11 +78,51 @@
 
 ---
 
-## クイックスタート（開発）
+## 📥 インストール（一般ユーザー向け）
+
+> macOS のみ（Intel / Apple Silicon どちらも対応）
+
+### 方法 1: ワンライナー（最も簡単・ターミナル使用）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cotton1101/qiitto-desktop/main/scripts/install.sh | bash
+```
+
+最新版を自動取得 → `/Applications` にインストール → quarantine 除去 → 起動、まで全自動。
+
+### 方法 2: 手動 + ヘルパー（ターミナル不要）
+
+1. [**最新リリースページ**](https://github.com/cotton1101/qiitto-desktop/releases/latest) を開く
+2. **`qiitto-desktop_X.X.X_universal.dmg`** をダウンロード
+3. ダブルクリックで開き、**qiitto-desktop.app** を `Applications` フォルダにドラッグ
+4. 同じリリースから **`install-helper.zip`** をダウンロード → 解凍
+5. 出てきた **`install-helper.command`** をダブルクリック
+6. ターミナルが自動で起動して quarantine 解除 + アプリ起動。完了
+
+### 方法 3: 上級者向け（最短）
+
+```bash
+# .dmg をマウント・ドラッグで /Applications に置いた後：
+xattr -cr /Applications/qiitto-desktop.app && open /Applications/qiitto-desktop.app
+```
+
+### ⚠️ なぜこの手順が必要？
+
+v0.2.x 時点で qiitto-desktop は **Apple Developer ID 署名なしで配布** されています。そのため macOS の Gatekeeper が「壊れている可能性があるためゴミ箱に移動」と表示し、起動を拒否します（**ファイル自体は問題ありません**。Tauri の Ed25519 自動アップデート署名で改ざん検証は別途されています）。
+
+**v0.3 以降で Apple Developer Program 加入 → Notarization 対応予定**です。それまでは上記いずれかの方法でインストールしてください。
+
+### 🔄 次回以降のアップデート
+
+v0.2.0 以降をインストール済みなら、アプリ内の **設定 → 「アップデートを確認」** から自動更新できます（Gatekeeper も発動しません）。
+
+---
+
+## クイックスタート（開発者向け）
 
 ### 必要環境
 
-- **macOS**（v0.1 は macOS のみ。Windows/Linux 動作は要検証）
+- **macOS**（v0.2 は macOS のみ。Windows/Linux 動作は要検証）
 - [Node.js 20+](https://nodejs.org/) と [pnpm 10+](https://pnpm.io/)
 - [Rust stable](https://www.rust-lang.org/tools/install)（`rustup`）
 - Xcode Command Line Tools（`xcode-select --install`）
@@ -115,8 +155,6 @@ pnpm tauri build
 
 - `.app` バンドル: `src-tauri/target/release/bundle/macos/qiitto-desktop.app`
 - `.dmg` インストーラ: `src-tauri/target/release/bundle/dmg/qiitto-desktop_*.dmg`
-
-> 未署名なので Gatekeeper バイパスが必要：右クリック → 開く、または `xattr -dr com.apple.quarantine path/to/.app`。
 
 ---
 

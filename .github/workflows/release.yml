@@ -38,6 +38,11 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Package install helper (preserve exec bit via zip)
+        run: |
+          chmod +x install-helper.command
+          zip -j install-helper.zip install-helper.command
+
       - name: Build & publish release (Universal macOS)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -48,29 +53,34 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "qiitto-desktop ${{ github.ref_name }}"
           releaseBody: |
-            ## 🆕 主な変更点
+            ## 📥 インストール（3 方法から選択）
 
-            ### v0.2.0 — 公開前チェック + 自動アップデート
+            ### 方法 1: ワンライナー（最も簡単）
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/cotton1101/qiitto-desktop/main/scripts/install.sh | bash
+            ```
 
-            **公開前チェック 3 機能**
-            - 🛡 **スキャン** — 既定 6 ルール（API キー / メール / IPv4 / Zero-width 等）+ ユーザー追加ルールで機密情報を検出
-            - ✨ **AI 書き換え** — 検出ワードを Claude API で伏字化（before/after 比較）
-            - 🐦 **X 投稿生成** — 記事から X ポスト案を 3 パターン生成、コピー or X intent URL で投稿
+            ### 方法 2: 手動 + ヘルパー（ターミナル不要）
+            1. **`qiitto-desktop_*.dmg`** をダウンロード → Applications にドラッグ
+            2. **`install-helper.zip`** をダウンロード → 解凍 → 出てきた `install-helper.command` をダブルクリック
+            3. ターミナルが自動で起動 → Gatekeeper 解除 → アプリ起動
 
-            **自動アップデート**
-            - Ed25519 署名検証付きのアップデーター
-            - Settings → 「アップデートを確認」 → ワンクリックで最新版に置換・再起動
+            ### 方法 3: 上級者
+            ```bash
+            xattr -cr /Applications/qiitto-desktop.app && open /Applications/qiitto-desktop.app
+            ```
 
-            ## 📥 インストール
+            > ⚠️ Apple Developer ID 未取得のため Gatekeeper にブロックされます。v0.3 で署名+Notarization 対応予定。
 
-            **`qiitto-desktop_*.dmg`** をダウンロードして Applications にドラッグ。
-
-            初回起動時は Gatekeeper 警告が出ます（未署名のため）：
-            - 右クリック → 開く で起動許可、または
-            - `xattr -dr com.apple.quarantine /Applications/qiitto-desktop.app`
-
-            v0.1 をインストール済みの場合、Settings → 「アップデートを確認」から自動更新できます（v0.2.0 以降）。
+            **既に v0.2.0 以降をご利用の方**: 設定 → 「アップデートを確認」 から自動更新できます。
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           args: --target universal-apple-darwin
+
+      - name: Upload install helper to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: install-helper.zip
+          fail_on_unmatched_files: true

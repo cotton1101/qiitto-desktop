@@ -35,6 +35,9 @@ secrets.json
 *.key.pub
 .tauri-keys/
 
+# install-helper.zip は CI が release.yml で生成・アップロードするのでローカルでは追跡しない
+install-helper.zip
+
 # ============================================================
 # Build outputs
 # ============================================================
