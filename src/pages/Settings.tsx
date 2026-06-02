@@ -139,18 +139,18 @@ function UpdateSection() {
   };
 
   const install = async () => {
-    if (
-      !confirm(
-        "新バージョンをダウンロードしてアプリを再起動します。よろしいですか？",
-      )
-    )
-      return;
+    // Tauri 2 WebView は window.confirm() を silently 無視するため使わない。
+    // 直前のステップで「新バージョン v0.x が利用可能」パネルを表示済み・
+    // 緑のボタンを明示的に押した時点で意図確認は十分。
     setInstalling(true);
+    const t = toast.loading(
+      "ダウンロード中… 完了次第、自動で再起動します（30秒〜2分）",
+    );
     try {
       await installUpdate();
-      // ここに到達することはない（再起動される）
+      // 再起動でこの promise は解決しない
     } catch (e) {
-      toast.error(`更新失敗: ${e}`);
+      toast.error(`更新失敗: ${e}`, { id: t, duration: 8000 });
       setInstalling(false);
     }
   };
