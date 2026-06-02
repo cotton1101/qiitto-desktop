@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & publish release (Universal macOS)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "qiitto-desktop ${{ github.ref_name }}"
+          releaseBody: |
+            ## 🆕 主な変更点
+
+            ### v0.2.0 — 公開前チェック + 自動アップデート
+
+            **公開前チェック 3 機能**
+            - 🛡 **スキャン** — 既定 6 ルール（API キー / メール / IPv4 / Zero-width 等）+ ユーザー追加ルールで機密情報を検出
+            - ✨ **AI 書き換え** — 検出ワードを Claude API で伏字化（before/after 比較）
+            - 🐦 **X 投稿生成** — 記事から X ポスト案を 3 パターン生成、コピー or X intent URL で投稿
+
+            **自動アップデート**
+            - Ed25519 署名検証付きのアップデーター
+            - Settings → 「アップデートを確認」 → ワンクリックで最新版に置換・再起動
+
+            ## 📥 インストール
+
+            **`qiitto-desktop_*.dmg`** をダウンロードして Applications にドラッグ。
+
+            初回起動時は Gatekeeper 警告が出ます（未署名のため）：
+            - 右クリック → 開く で起動許可、または
+            - `xattr -dr com.apple.quarantine /Applications/qiitto-desktop.app`
+
+            v0.1 をインストール済みの場合、Settings → 「アップデートを確認」から自動更新できます（v0.2.0 以降）。
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: --target universal-apple-darwin

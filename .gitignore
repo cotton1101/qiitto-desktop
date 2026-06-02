@@ -30,6 +30,10 @@ secrets.json
 *.env
 .env*
 !.env.example
+# Tauri 自動アップデート用の署名鍵（ローカル保管・絶対コミット禁止）
+*.key
+*.key.pub
+.tauri-keys/
 
 # ============================================================
 # Build outputs

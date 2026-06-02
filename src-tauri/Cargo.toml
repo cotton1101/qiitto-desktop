@@ -1,6 +1,6 @@
 [package]
 name = "qiitto-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "qiitto-desktop — Generate Qiita articles from Claude Code dev logs (Tauri 2 + React + Rust)"
 authors = ["Cotton-Web 山田英紀"]
 edition = "2021"
@@ -27,6 +27,7 @@ serde_json = "1"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
+tauri-plugin-updater = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
 keyring = "3"
 tokio = { version = "1", features = ["full"] }

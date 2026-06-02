@@ -107,6 +107,26 @@ export async function claudeGenerateArticle(args: {
   return await invoke<GenerationResult>("claude_generate_article", args);
 }
 
+/** 公開前 AI 書き換え。`targets` の機密ワードを伏字化した Markdown を返す。10〜30 秒。 */
+export async function claudeRewriteForPublish(args: {
+  body: string;
+  targets: string[];
+  model?: string;
+}): Promise<string> {
+  return await invoke<string>("claude_rewrite_for_publish", args);
+}
+
+/** 記事を紹介する X (Twitter) 投稿文 3 パターンを生成。10〜20 秒。 */
+export async function claudeGenerateTweets(args: {
+  title: string;
+  body: string;
+  tags: string[];
+  url?: string | null;
+  model?: string;
+}): Promise<string[]> {
+  return await invoke<string[]>("claude_generate_tweets", args);
+}
+
 // ---- Qiita API ---------------------------------------------------------------
 
 export interface QiitaUser {
@@ -140,4 +160,24 @@ export async function qiitaSyncItem(args: {
   private?: boolean;
 }): Promise<QiitaItem> {
   return await invoke<QiitaItem>("qiita_sync_item", { args });
+}
+
+// ---- 自動アップデート ---------------------------------------------------------
+
+export interface UpdateInfo {
+  available: boolean;
+  version: string | null;
+  currentVersion: string;
+  notes: string | null;
+  date: string | null;
+}
+
+/** GitHub Releases の `latest.json` を見て新版があるか確認。ダウンロードはしない。 */
+export async function checkForUpdates(): Promise<UpdateInfo> {
+  return await invoke<UpdateInfo>("check_for_updates");
+}
+
+/** 新版をダウンロード→Ed25519署名検証→置換→再起動。再起動が成功するとこの promise は解決しない。 */
+export async function installUpdate(): Promise<void> {
+  return await invoke("install_update");
 }

@@ -6,6 +6,7 @@ mod claude_log;
 mod error;
 mod keyring_store;
 mod qiita_api;
+mod updater;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -25,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:qiitto.db", migrations())
@@ -38,8 +40,12 @@ pub fn run() {
             claude_log::read_claude_sessions,
             claude_api::claude_test_connection,
             claude_api::claude_generate_article,
+            claude_api::claude_rewrite_for_publish,
+            claude_api::claude_generate_tweets,
             qiita_api::qiita_test_connection,
             qiita_api::qiita_sync_item,
+            updater::check_for_updates,
+            updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

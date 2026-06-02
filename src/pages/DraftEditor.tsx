@@ -11,6 +11,8 @@ import {
   Globe,
   ExternalLink,
   EyeOff,
+  Shield,
+  Send,
 } from "lucide-react";
 import MDEditor from "@uiw/react-md-editor";
 import "@uiw/react-md-editor/markdown-editor.css";
@@ -18,6 +20,9 @@ import { DraftRow, getDraft, markDraftQiitaSynced, updateDraft } from "../lib/db
 import { qiitaSyncItem } from "../lib/api";
 import QiitaPreview from "../components/QiitaPreview";
 import PublishModal from "../components/PublishModal";
+import ScanModal from "../components/ScanModal";
+import RewriteModal from "../components/RewriteModal";
+import TweetModal from "../components/TweetModal";
 
 type PaneMode = "split" | "edit" | "preview";
 
@@ -34,6 +39,10 @@ export default function DraftEditor() {
   const [paneMode, setPaneMode] = useState<PaneMode>("split");
   const [syncing, setSyncing] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [rewriteOpen, setRewriteOpen] = useState(false);
+  const [rewriteTargets, setRewriteTargets] = useState<string[]>([]);
+  const [tweetOpen, setTweetOpen] = useState(false);
   const autosaveTimer = useRef<number | null>(null);
 
   const parsedTags = tagsInput
@@ -237,6 +246,30 @@ export default function DraftEditor() {
                   : "保存済み"}
           </span>
 
+          {/* 公開支援：スキャン / X 投稿 */}
+          <div className="flex border border-gray-200 rounded overflow-hidden text-xs">
+            <button
+              className="flex items-center gap-1 px-2 py-1 bg-white text-emerald-700 hover:bg-emerald-50"
+              onClick={() => setScanOpen(true)}
+              title="公開前スキャン（機密情報の検出 → AI 書き換え）"
+            >
+              <Shield className="w-3 h-3" />
+              スキャン
+            </button>
+            <button
+              className="flex items-center gap-1 px-2 py-1 border-l border-gray-200 bg-white text-sky-700 hover:bg-sky-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setTweetOpen(true)}
+              disabled={!body.trim() || !title.trim()}
+              title={
+                body.trim() && title.trim()
+                  ? "Claude で X 投稿文を 3 パターン生成"
+                  : "タイトルと本文があるときに使えます"
+              }
+            >
+              <Send className="w-3 h-3" />X 投稿
+            </button>
+          </div>
+
           {/* Qiita 同期 / 公開 */}
           {isSynced && draft.qiita_url && (
             <a
@@ -307,6 +340,38 @@ export default function DraftEditor() {
         bodyLength={body.length}
         onClose={() => setPublishOpen(false)}
         onConfirm={() => syncToQiita(true)}
+      />
+
+      <ScanModal
+        open={scanOpen}
+        body={body}
+        onClose={() => setScanOpen(false)}
+        onRewrite={(targets) => {
+          setRewriteTargets(targets);
+          setScanOpen(false);
+          setRewriteOpen(true);
+        }}
+      />
+
+      <RewriteModal
+        open={rewriteOpen}
+        body={body}
+        targets={rewriteTargets}
+        onClose={() => setRewriteOpen(false)}
+        onApply={(newBody) => {
+          setBody(newBody);
+          setRewriteOpen(false);
+          toast.success("本文を AI 書き換え版に置き換えました");
+        }}
+      />
+
+      <TweetModal
+        open={tweetOpen}
+        title={title.trim() || "(無題)"}
+        body={body}
+        tags={parsedTags}
+        url={draft?.qiita_url ?? null}
+        onClose={() => setTweetOpen(false)}
       />
 
       {/* タイトル + タグ */}

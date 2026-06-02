@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { ShieldCheck, KeySquare, Trash2 } from "lucide-react";
+import {
+  ShieldCheck,
+  KeySquare,
+  Trash2,
+  Download,
+  RefreshCw,
+  CheckCircle2,
+  Sparkles,
+} from "lucide-react";
 import {
   KeyringKey,
+  UpdateInfo,
+  checkForUpdates,
+  installUpdate,
   keyringDelete,
   keyringHas,
   keyringSet,
@@ -107,6 +118,121 @@ function KeyField({
   );
 }
 
+function UpdateSection() {
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+
+  const check = async () => {
+    setChecking(true);
+    try {
+      const r = await checkForUpdates();
+      setInfo(r);
+      if (!r.available) {
+        toast.success(`最新版です（v${r.currentVersion}）`);
+      }
+    } catch (e) {
+      toast.error(`確認失敗: ${e}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const install = async () => {
+    if (
+      !confirm(
+        "新バージョンをダウンロードしてアプリを再起動します。よろしいですか？",
+      )
+    )
+      return;
+    setInstalling(true);
+    try {
+      await installUpdate();
+      // ここに到達することはない（再起動される）
+    } catch (e) {
+      toast.error(`更新失敗: ${e}`);
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <section className="card space-y-3">
+      <h2 className="text-lg font-semibold flex items-center gap-2">
+        <Download className="w-5 h-5 text-qiitto-600" />
+        アプリの更新
+      </h2>
+      <p className="text-xs text-gray-500">
+        GitHub Releases (
+        <a
+          href="https://github.com/cotton1101/qiitto-desktop/releases"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="underline text-qiitto-700"
+        >
+          cotton1101/qiitto-desktop
+        </a>
+        ) から最新版を確認します。Ed25519 署名で検証して安全に置換されます。
+      </p>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={check}
+          disabled={checking || installing}
+          className="btn-secondary text-sm"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 mr-1 ${checking ? "animate-spin" : ""}`}
+          />
+          {checking ? "確認中…" : "アップデートを確認"}
+        </button>
+        {info && (
+          <span className="text-xs text-gray-500">
+            現在: v{info.currentVersion}
+          </span>
+        )}
+      </div>
+
+      {info?.available && (
+        <div className="border border-emerald-200 bg-emerald-50 rounded p-3 space-y-2">
+          <div className="flex items-center gap-2 text-emerald-700 font-medium text-sm">
+            <Sparkles className="w-4 h-4" />
+            新バージョン v{info.version} が利用可能！
+          </div>
+          {info.notes && (
+            <pre className="text-xs whitespace-pre-wrap text-gray-700 max-h-40 overflow-y-auto bg-white border rounded p-2">
+              {info.notes}
+            </pre>
+          )}
+          <button
+            onClick={install}
+            disabled={installing}
+            className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm w-full"
+          >
+            {installing ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />
+                ダウンロード中…
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 mr-1" />
+                ダウンロードして再起動
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {info && !info.available && (
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          最新版を使用中です。
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -144,6 +270,8 @@ export default function Settings() {
           API キーは OS の Keyring（macOS Keychain）に保存され、アプリには戻ってきません。
         </p>
       </header>
+
+      <UpdateSection />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">認証（API キー）</h2>

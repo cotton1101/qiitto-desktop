@@ -14,6 +14,8 @@ use tauri::AppHandle;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 const MAX_TOKENS: u32 = 8192;
+const REWRITE_MAX_TOKENS: u32 = 8192;
+const TWEET_MAX_TOKENS: u32 = 1024;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 const DEFAULT_STYLE_HINT: &str = "実装ログ系、ハマったポイント中心、コード例を多めに";
@@ -307,4 +309,149 @@ pub async fn claude_generate_article(
         parse_ok: parsed.parse_ok,
         model: model_used,
     })
+}
+
+// ---------------------------------------------------------------------------
+// 公開前 AI 書き換え（伏字化）
+// ---------------------------------------------------------------------------
+
+fn build_rewrite_prompt(body: &str, targets: &[String]) -> String {
+    let targets_block = if targets.is_empty() {
+        "（明示指定なし：API キー / メール / IPv4 / 個人名・社内秘らしき固有名詞を自動で検出して伏字化してください）".to_string()
+    } else {
+        targets
+            .iter()
+            .enumerate()
+            .map(|(i, t)| format!("{}. `{}`", i + 1, t))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut s = String::new();
+    s.push_str("以下の Markdown 記事から、指定された機密情報を「公開しても安全な形」に書き換えてください。\n\n");
+    s.push_str("【厳守ルール】\n");
+    s.push_str("- 完全削除ではなく、文脈が成立する範囲で**一般化・伏字化**する\n");
+    s.push_str("  例: `160.251.X.X` → `<旧VPS>` / `info@my-domain.com` → `info@<your-domain>` / `田中太郎` → `担当エンジニア`\n");
+    s.push_str("- API キー (`sk-...`, `ghp_...` 等)・トークンらしき長文字列は `<REDACTED>` に置換\n");
+    s.push_str("- 技術的内容・コード例の構造・見出し階層は**絶対に変更しない**\n");
+    s.push_str("- セクションの追加・削除・並び替えをしない\n");
+    s.push_str("- 出力は書き換え後の Markdown 本文のみ。前置きや説明・コードフェンスでの全体ラップは不要\n\n");
+    s.push_str("【伏字化対象】\n");
+    s.push_str(&targets_block);
+    s.push_str("\n\n【元の Markdown】\n");
+    s.push_str(body);
+    s
+}
+
+/// 公開前の AI 書き換え。`targets` に渡した文字列群を伏字化する。
+#[tauri::command]
+pub async fn claude_rewrite_for_publish(
+    app: AppHandle,
+    body: String,
+    targets: Vec<String>,
+    model: Option<String>,
+) -> AppResult<String> {
+    if body.trim().is_empty() {
+        return Err(AppError::InvalidInput("本文が空です。".into()));
+    }
+    let api_key = load_api_key(&app)?;
+    let model = model.unwrap_or_else(|| DEFAULT_MODEL.to_string());
+
+    let prompt = build_rewrite_prompt(&body, &targets);
+
+    let client = http_client(180)?;
+    let req_body = serde_json::json!({
+        "model": &model,
+        "max_tokens": REWRITE_MAX_TOKENS,
+        "messages": [{"role": "user", "content": prompt}]
+    });
+
+    let resp = anthropic_request(&client, &api_key, req_body).send().await?;
+    let json = anthropic_error_for_status(resp).await?;
+    let text = extract_response_text(&json);
+
+    // 万一全体が ``` で囲まれていた場合に剥がす
+    let fence_re = Regex::new(r"(?s)^```(?:markdown|md)?\s*\n(.*)\n```\s*$").unwrap();
+    let cleaned = if let Some(caps) = fence_re.captures(text.trim()) {
+        caps.get(1).unwrap().as_str().trim().to_string()
+    } else {
+        text.trim().to_string()
+    };
+
+    if cleaned.is_empty() {
+        return Err(AppError::External("書き換え結果が空でした。再試行してください。".into()));
+    }
+
+    Ok(cleaned)
+}
+
+// ---------------------------------------------------------------------------
+// X (Twitter) 投稿文生成
+// ---------------------------------------------------------------------------
+
+fn build_tweet_prompt(title: &str, body: &str, tags: &[String], url: Option<&str>) -> String {
+    let body_excerpt: String = body.chars().take(2500).collect();
+    let tags_str = tags.join(", ");
+    let url_block = url
+        .map(|u| format!("\n【記事URL（参考・本文には含めない）】\n{}\n", u))
+        .unwrap_or_default();
+
+    let mut s = String::new();
+    s.push_str("以下の Qiita 記事を紹介する X (旧 Twitter) のポスト案を 3 パターン作ってください。\n\n");
+    s.push_str("【厳守ルール】\n");
+    s.push_str("- 各ポスト 140 字以内（日本語）\n");
+    s.push_str("- 「読みたい」と思わせる導入 → 記事の核心 1 行 → 関連ハッシュタグ 2〜3 個（記事内容に合うもの）\n");
+    s.push_str("- URL は出力に**含めない**（呼び出し側で末尾に付加するため）\n");
+    s.push_str("- 3 案を `---` で区切るだけ。番号・前置き・解説・コードフェンスは不要\n");
+    s.push_str("- 各案は異なるトーンで。例: 1=技術的成果アピール / 2=ハマりポイント共有 / 3=エモ寄り\n\n");
+    s.push_str("【記事タイトル】\n");
+    s.push_str(title);
+    s.push_str("\n\n【タグ】\n");
+    s.push_str(&tags_str);
+    s.push_str("\n\n【本文抜粋（先頭 2500 字）】\n");
+    s.push_str(&body_excerpt);
+    s.push_str(&url_block);
+    s
+}
+
+/// 記事を紹介する X 投稿文を 3 パターン生成する。
+#[tauri::command]
+pub async fn claude_generate_tweets(
+    app: AppHandle,
+    title: String,
+    body: String,
+    tags: Vec<String>,
+    url: Option<String>,
+    model: Option<String>,
+) -> AppResult<Vec<String>> {
+    if body.trim().is_empty() {
+        return Err(AppError::InvalidInput("本文が空です。".into()));
+    }
+    let api_key = load_api_key(&app)?;
+    let model = model.unwrap_or_else(|| DEFAULT_MODEL.to_string());
+
+    let prompt = build_tweet_prompt(&title, &body, &tags, url.as_deref());
+
+    let client = http_client(60)?;
+    let req_body = serde_json::json!({
+        "model": &model,
+        "max_tokens": TWEET_MAX_TOKENS,
+        "messages": [{"role": "user", "content": prompt}]
+    });
+
+    let resp = anthropic_request(&client, &api_key, req_body).send().await?;
+    let json = anthropic_error_for_status(resp).await?;
+    let text = extract_response_text(&json);
+
+    let tweets: Vec<String> = text
+        .split("---")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if tweets.is_empty() {
+        return Err(AppError::External("投稿案を取得できませんでした。再試行してください。".into()));
+    }
+
+    Ok(tweets)
 }
