@@ -1,0 +1,149 @@
+/* Qiita 風プレビューのスタイル（最小実用版） */
+
+.qiita-preview {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #1a202c;
+  padding: 1rem 1.25rem;
+  background: #fff;
+}
+
+.qiita-preview h1,
+.qiita-preview h2,
+.qiita-preview h3,
+.qiita-preview h4 {
+  font-weight: 700;
+  margin: 1.4em 0 0.6em;
+  line-height: 1.4;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.3em;
+}
+.qiita-preview h1 { font-size: 1.7em; }
+.qiita-preview h2 { font-size: 1.45em; }
+.qiita-preview h3 { font-size: 1.2em; border-bottom: none; }
+.qiita-preview h4 { font-size: 1.05em; border-bottom: none; }
+
+.qiita-preview > *:first-child {
+  margin-top: 0;
+}
+
+.qiita-preview p {
+  margin: 0.6em 0 0.9em;
+}
+
+.qiita-preview a {
+  color: #16a34a;
+  text-decoration: underline;
+}
+.qiita-preview a:hover { color: #15803d; }
+
+.qiita-preview ul,
+.qiita-preview ol {
+  padding-left: 1.6em;
+  margin: 0.4em 0 0.9em;
+}
+.qiita-preview li { margin: 0.2em 0; }
+
+.qiita-preview blockquote {
+  border-left: 4px solid #cbd5e0;
+  background: #f7fafc;
+  color: #4a5568;
+  padding: 0.6em 1em;
+  margin: 0.8em 0;
+}
+
+/* Inline code */
+.qiita-preview code {
+  background: #f1f5f9;
+  color: #be185d;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.88em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Code block (rehype-highlight が wrap した <pre><code>) */
+.qiita-preview pre {
+  background: #f6f8fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.9em 1em;
+  overflow-x: auto;
+  margin: 0.6em 0 1em;
+  font-size: 0.86em;
+  line-height: 1.55;
+}
+.qiita-preview pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Tables (GFM) */
+.qiita-preview table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.93em;
+}
+.qiita-preview th,
+.qiita-preview td {
+  border: 1px solid #cbd5e0;
+  padding: 0.45em 0.7em;
+}
+.qiita-preview th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+.qiita-preview hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.6em 0;
+}
+
+.qiita-preview img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+/* `:::note info|warn|alert` ブロック */
+.qiita-note {
+  border-radius: 6px;
+  padding: 0.7em 1em 0.7em 0.9em;
+  margin: 0.8em 0;
+  border-left: 4px solid;
+}
+.qiita-note > *:first-child { margin-top: 0; }
+.qiita-note > *:last-child { margin-bottom: 0; }
+.qiita-note-label {
+  font-weight: 700;
+  font-size: 0.85em;
+  margin-bottom: 0.35em;
+  opacity: 0.85;
+}
+.qiita-note-info {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+  color: #1e40af;
+}
+.qiita-note-warn {
+  background: #fffbeb;
+  border-left-color: #f59e0b;
+  color: #92400e;
+}
+.qiita-note-alert {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+  color: #991b1b;
+}
+
+/* 上限超過の警告バナー */
+.qiita-overlimit {
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 0.5em 0.75em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  margin-bottom: 0.8em;
+}
