@@ -96,11 +96,31 @@ async fn parse_qiita_error_for_status(resp: Response) -> AppResult<Value> {
     Ok(parsed)
 }
 
-/// タグ文字列配列 → Qiita API 形式の `[{ "name": "..." }]` に変換
+/// Qiita タグ名を正規化する。
+/// - 前後＋内部の空白をすべて除去（例: "YouTube API" → "YouTubeAPI"）。
+///   Qiita はタグ名中の空白を区切りとして扱い、1 タグが複数に分割される。これで
+///   見かけ 5 個でも実質 6 個になり上限超過で投稿が拒否される（403/422）罠を防ぐ。
+/// - 空タグの除去・重複排除（大文字小文字を無視、最初の出現を優先・順序維持）
+fn sanitize_tags(tags: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in tags {
+        // split_whitespace().collect() で前後・内部の空白をまとめて除去
+        let cleaned: String = t.split_whitespace().collect();
+        if cleaned.is_empty() {
+            continue;
+        }
+        if !out.iter().any(|e| e.eq_ignore_ascii_case(&cleaned)) {
+            out.push(cleaned);
+        }
+    }
+    out
+}
+
+/// タグ文字列配列 → Qiita API 形式の `[{ "name": "..." }]` に変換（正規化込み）
 fn tags_to_qiita_payload(tags: &[String]) -> Vec<Value> {
-    tags.iter()
-        .filter(|t| !t.trim().is_empty())
-        .map(|t| serde_json::json!({ "name": t.trim() }))
+    sanitize_tags(tags)
+        .into_iter()
+        .map(|t| serde_json::json!({ "name": t }))
         .collect()
 }
 
@@ -168,9 +188,9 @@ pub async fn qiita_sync_item(app: AppHandle, args: SyncItemArgs) -> AppResult<Qi
     let token = load_token(&app)?;
     let client = http_client(30)?;
 
-    // 共通: タグが指定されていれば 0〜5 を強制
+    // 共通: タグが指定されていれば 0〜5 を強制（正規化後の実数で判定）
     if let Some(tags) = args.tags.as_ref() {
-        if tags.len() > 5 {
+        if sanitize_tags(tags).len() > 5 {
             return Err(AppError::InvalidInput("タグは最大5つまでです。".into()));
         }
     }

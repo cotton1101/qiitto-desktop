@@ -316,3 +316,36 @@ export async function saveSettings(
     values,
   );
 }
+
+// ---- 連載（同じプロジェクトの前回記事）------------------------------------
+
+export interface PreviousDraft {
+  id: string;
+  title: string;
+  body: string;
+  qiita_url: string | null;
+  /** ISO8601（UTC）。素材をこれ以降の会話に絞るのに使う */
+  created_at: string;
+}
+
+/** 同じ Claude Code プロジェクト・同じ投稿先で最後に生成した下書き（無ければ null）。 */
+export async function findPreviousDraft(
+  projectPath: string,
+  platform: Platform,
+): Promise<PreviousDraft | null> {
+  const conn = await db();
+  const rows = await conn.select<PreviousDraft[]>(
+    `SELECT d.id, d.title, d.body, d.qiita_url, d.created_at
+     FROM drafts d
+     JOIN generations g ON g.id = d.generation_id
+     JOIN sources s ON s.id = g.source_id
+     WHERE s.source_type = 'claude_log'
+       AND json_extract(s.metadata, '$.project_path') = ?
+       AND d.platform = ?
+     ORDER BY d.created_at DESC LIMIT 1`,
+    [projectPath, platform],
+  );
+  const r = rows[0];
+  // SQLite の datetime('now') は "YYYY-MM-DD HH:MM:SS"（UTC）
+  return r ? { ...r, created_at: `${r.created_at.replace(" ", "T")}Z` } : null;
+}

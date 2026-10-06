@@ -40,6 +40,17 @@ pub struct GenerationResult {
     pub model: String,
 }
 
+/// 同じプロジェクト・同じ投稿先の前回記事（続編として書くときに渡す）。
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct PreviousArticle {
+    pub title: String,
+    pub body: String,
+    pub url: Option<String>,
+}
+
+/// プロンプトに載せる前回記事本文の上限（文字数）。
+const PREVIOUS_BODY_MAX_CHARS: usize = 6000;
+
 #[derive(Debug, Serialize)]
 pub struct TestConnectionResult {
     pub model: String,
@@ -57,11 +68,44 @@ fn build_prompt(
     style_hint: &str,
     target_length: &str,
     platform: &str,
+    previous: Option<&PreviousArticle>,
 ) -> String {
-    match platform {
+    let base = match platform {
         "note" => build_note_prompt(source_type, title, raw_content, style_hint, target_length),
         _ => build_qiita_prompt(source_type, title, raw_content, style_hint, target_length),
+    };
+    match previous {
+        Some(prev) => format!("{base}\n\n{}", build_continuation_section(prev)),
+        None => base,
     }
+}
+
+/// 続編として書かせるための追記セクション。
+fn build_continuation_section(prev: &PreviousArticle) -> String {
+    let body: String = prev.body.chars().take(PREVIOUS_BODY_MAX_CHARS).collect();
+    let omitted = if prev.body.chars().count() > PREVIOUS_BODY_MAX_CHARS {
+        "\n（以下省略）"
+    } else {
+        ""
+    };
+    let url = prev.url.as_deref().unwrap_or("");
+    let title = &prev.title;
+    format!(
+r#"<previous_article>
+<title>{title}</title>
+<url>{url}</url>
+<body>
+{body}{omitted}
+</body>
+</previous_article>
+
+【連載の続編として書く（上の厳守ルールより優先）】
+- この記事は <previous_article> の続編。素材のうち前回記事で既に書いた内容（背景・経緯・同じハマりどころ）は繰り返さない
+- 冒頭の導入ではプロジェクトの背景を一から説明し直さず、前回の要点を1〜2文で振り返ってから、前回以降の進展・新しく分かったことを中心に書く
+- <url> が空でなければ、冒頭の振り返りで「前回の記事」としてリンクする
+- 前回と同じ見出し構成でもよいが、中身は今回の新しい内容にする
+- タイトル候補は前回タイトルと重複しない、今回の内容を表すものにする"#
+    )
 }
 
 fn build_qiita_prompt(
@@ -369,6 +413,7 @@ pub async fn claude_generate_article(
     target_length: Option<String>,
     model: Option<String>,
     platform: Option<String>,
+    previous_article: Option<PreviousArticle>,
 ) -> AppResult<GenerationResult> {
     if raw_content.trim().is_empty() {
         return Err(AppError::InvalidInput("素材が空です。".into()));
@@ -386,6 +431,7 @@ pub async fn claude_generate_article(
         &style_hint,
         &target_length,
         &platform,
+        previous_article.as_ref(),
     );
 
     let client = http_client(180)?; // 同期生成は最大3分
@@ -560,4 +606,27 @@ pub async fn claude_generate_tweets(
     }
 
     Ok(tweets)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn continuation_section_only_when_previous_given() {
+        let plain = build_prompt("claude_log", "t", "素材", "s", "medium", "note", None);
+        assert!(!plain.contains("<previous_article>"));
+
+        let prev = PreviousArticle {
+            title: "前回タイトル".into(),
+            body: "あ".repeat(PREVIOUS_BODY_MAX_CHARS + 10),
+            url: Some("https://qiita.com/x/items/1".into()),
+        };
+        let p = build_prompt("claude_log", "t", "素材", "s", "medium", "qiita", Some(&prev));
+        assert!(p.contains("<title>前回タイトル</title>"));
+        assert!(p.contains("<url>https://qiita.com/x/items/1</url>"));
+        assert!(p.contains("連載の続編として書く"));
+        assert!(p.contains("（以下省略）"));
+        assert!(!p.contains(&"あ".repeat(PREVIOUS_BODY_MAX_CHARS + 1)));
+    }
 }

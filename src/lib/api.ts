@@ -84,6 +84,12 @@ export interface GenerationResult {
   model: string;
 }
 
+export interface PreviousArticle {
+  title: string;
+  body: string;
+  url: string | null;
+}
+
 export interface ClaudeTestResult {
   model: string;
   stop_reason: string | null;
@@ -105,6 +111,8 @@ export async function claudeGenerateArticle(args: {
   targetLength?: "short" | "medium" | "long";
   model?: string;
   platform?: "qiita" | "note";
+  /** 指定すると前回記事の続編として生成する */
+  previousArticle?: PreviousArticle | null;
 }): Promise<GenerationResult> {
   return await invoke<GenerationResult>("claude_generate_article", args);
 }

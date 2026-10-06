@@ -8,6 +8,7 @@ import {
   RefreshCw,
   CheckCircle2,
   Sparkles,
+  PlugZap,
 } from "lucide-react";
 import {
   KeyringKey,
@@ -17,6 +18,8 @@ import {
   keyringDelete,
   keyringHas,
   keyringSet,
+  qiitaTestConnection,
+  claudeTestConnection,
 } from "../lib/api";
 import { loadSettings, saveSettings, UserSettings } from "../lib/db";
 
@@ -24,14 +27,32 @@ function KeyField({
   label,
   storeKey,
   description,
+  onTest,
 }: {
   label: string;
   storeKey: KeyringKey;
   description?: string;
+  /** 接続テスト。成功時にトーストへ出す文言を返す。未指定ならボタン非表示。 */
+  onTest?: () => Promise<string>;
 }) {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const test = async () => {
+    if (!onTest) return;
+    setTesting(true);
+    const t = toast.loading(`${label} を接続テスト中…`);
+    try {
+      const msg = await onTest();
+      toast.success(msg, { id: t });
+    } catch (e) {
+      toast.error(`接続失敗: ${e}`, { id: t, duration: 8000 });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => {
     keyringHas(storeKey).then(setHasKey).catch(() => setHasKey(false));
@@ -103,6 +124,18 @@ function KeyField({
         >
           保存
         </button>
+        {hasKey && onTest && (
+          <button
+            className="btn-secondary"
+            onClick={test}
+            disabled={busy || testing}
+            title="保存済みのキーで接続テスト"
+          >
+            <PlugZap
+              className={`w-4 h-4 ${testing ? "animate-pulse" : ""}`}
+            />
+          </button>
+        )}
         {hasKey && (
           <button
             className="btn-secondary"
@@ -279,11 +312,19 @@ export default function Settings() {
           label="Anthropic API Key"
           storeKey={KeyringKey.AnthropicApiKey}
           description="Claude API を呼び出すためのキー（sk-ant-... 形式）"
+          onTest={async () => {
+            const r = await claudeTestConnection();
+            return `接続OK（${r.model}）`;
+          }}
         />
         <KeyField
           label="Qiita Personal Access Token"
           storeKey={KeyringKey.QiitaToken}
           description="Qiita 下書き作成・更新に使用（権限: read_qiita, write_qiita）"
+          onTest={async () => {
+            const u = await qiitaTestConnection();
+            return `接続OK（@${u.id}${u.name ? ` / ${u.name}` : ""}）`;
+          }}
         />
         <KeyField
           label="GitHub PAT（任意）"

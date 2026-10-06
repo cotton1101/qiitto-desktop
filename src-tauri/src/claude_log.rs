@@ -145,6 +145,30 @@ fn first_meta(path: &Path) -> (Option<String>, Option<String>) {
     (None, None)
 }
 
+/// user / assistant の会話行を 1 行でも含むか（見つかった時点で打ち切る）。
+fn has_conversation(path: &Path, include_sidechains: bool) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    for line in BufReader::new(file).lines() {
+        let Ok(line) = line else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        if !matches!(
+            v.get("type").and_then(|t| t.as_str()),
+            Some("user") | Some("assistant")
+        ) {
+            continue;
+        }
+        if !include_sidechains && v.get("isSidechain").and_then(|b| b.as_bool()).unwrap_or(false) {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
 fn is_within(base: &Path, target: &Path) -> bool {
     let (Ok(b), Ok(t)) = (base.canonicalize(), target.canonicalize()) else {
         return false;
@@ -398,11 +422,14 @@ pub fn read_sessions_impl(args: ReadSessionsArgs) -> AppResult<Option<ClaudeLogR
 
     files.sort_by_key(|p| mtime_of(p)); // 古い→新しい
     if args.latest_only {
-        let last = files.pop();
-        files.clear();
-        if let Some(l) = last {
-            files.push(l);
-        }
+        // Claude Code は会話を含まないメタ情報だけの JSONL（custom-title / agent-name 等）を
+        // 作ることがあるため、単純な mtime 最新ではなく「会話を含む最新」を選ぶ
+        let latest = files
+            .iter()
+            .rev()
+            .find(|p| has_conversation(p, args.include_sidechains))
+            .cloned();
+        files = latest.into_iter().collect();
     }
 
     let max_chars = args.max_chars.or(Some(200_000));
@@ -571,4 +598,54 @@ pub fn read_claude_sessions(args: ReadSessionsArgs) -> AppResult<Option<ClaudeLo
         return Err(AppError::InvalidInput("project_path is required".into()));
     }
     read_sessions_impl(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn latest_only_skips_metadata_only_jsonl() {
+        let base = std::env::temp_dir().join(format!("qiitto-claude-log-{}", std::process::id()));
+        let proj = base.join("-tmp-proj");
+        fs::create_dir_all(&proj).unwrap();
+
+        let conv = proj.join("conv.jsonl");
+        fs::write(
+            &conv,
+            concat!(
+                r#"{"type":"user","cwd":"/tmp/proj","sessionId":"conv","timestamp":"2026-09-27T00:00:00Z","message":{"content":"取込テスト"}}"#,
+                "\n",
+                r#"{"type":"assistant","cwd":"/tmp/proj","sessionId":"conv","timestamp":"2026-09-27T00:00:01Z","message":{"content":[{"type":"text","text":"了解"}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        // 新しい Claude Code が作る、会話を含まないメタ情報だけのファイル（こちらの方が新しい）
+        fs::write(
+            proj.join("meta.jsonl"),
+            concat!(
+                r#"{"type":"custom-title","cwd":"/tmp/proj","sessionId":"meta"}"#,
+                "\n",
+                r#"{"type":"agent-name","sessionId":"meta"}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        let r = read_sessions_impl(ReadSessionsArgs {
+            project_path: "/tmp/proj".into(),
+            latest_only: true,
+            base_dir: Some(base.clone()),
+            ..Default::default()
+        })
+        .unwrap()
+        .expect("project should resolve");
+        fs::remove_dir_all(&base).ok();
+
+        assert!(r.content.contains("取込テスト"), "content: {:?}", r.content);
+        assert_eq!(r.session_ids, vec!["conv".to_string()]);
+    }
 }

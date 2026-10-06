@@ -12,6 +12,7 @@ import {
 import {
   ClaudeLogProject,
   ClaudeLogResult,
+  PreviousArticle,
   claudeGenerateArticle,
   listClaudeProjects,
   readClaudeSessions,
@@ -23,6 +24,8 @@ import {
   markGenerationDone,
   markGenerationError,
   insertDraft,
+  findPreviousDraft,
+  PreviousDraft,
 } from "../lib/db";
 
 type Tab = "claude_log" | "text";
@@ -34,6 +37,8 @@ interface SaveAndGenerateOptions {
   rawContent: string;
   metadata?: Record<string, unknown>;
   targetLength: TargetLength;
+  /** 指定したプラットフォームは前回記事の続編として生成する */
+  previous?: Partial<Record<Platform, PreviousArticle>>;
 }
 
 async function generateOnePlatform(
@@ -49,6 +54,7 @@ async function generateOnePlatform(
       rawContent: opts.rawContent,
       targetLength: opts.targetLength,
       platform,
+      previousArticle: opts.previous?.[platform] ?? null,
     });
 
     const selectedTitle = result.title_options[0] ?? null;
@@ -215,6 +221,40 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
   const [result, setResult] = useState<ClaudeLogResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string>("");
+  const [previous, setPrevious] = useState<Partial<Record<Platform, PreviousDraft>>>({});
+  const [continueSeries, setContinueSeries] = useState(true);
+
+  // 選択中プロジェクトの前回記事（Qiita / note それぞれ）
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    (async () => {
+      const [qiita, note] = await Promise.all([
+        findPreviousDraft(selected, "qiita"),
+        findPreviousDraft(selected, "note"),
+      ]);
+      if (cancelled) return;
+      const next: Partial<Record<Platform, PreviousDraft>> = {};
+      if (qiita) next.qiita = qiita;
+      if (note) next.note = note;
+      setPrevious(next);
+    })().catch((e) => toast.error(`前回記事の取得失敗: ${e}`));
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  const seriesPlatforms = Array.from(platforms).filter((p) => previous[p]);
+  const continuing = continueSeries && seriesPlatforms.length > 0;
+  // 素材は「選択中の投稿先の前回記事のうち古い方」以降の会話に絞る（どちらの続きも欠けないように）
+  const sinceIso = continuing
+    ? seriesPlatforms.map((p) => previous[p]!.created_at).sort()[0]
+    : null;
+
+  // 素材の範囲（since）が変わったら読み込み済み素材は使えないのでクリア
+  useEffect(() => {
+    setResult(null);
+  }, [sinceIso]);
 
   const loadProjects = async () => {
     setRefreshing(true);
@@ -245,10 +285,14 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
       const r = await readClaudeSessions({
         project_path: selected,
         include_tool_calls: includeToolCalls,
-        latest_only: latestOnly,
+        // 続編モードは「前回記事以降の会話すべて」が素材なので最新セッションに限定しない
+        latest_only: continuing ? false : latestOnly,
+        since: sinceIso,
         max_chars: maxChars,
       });
       if (!r) toast.error("該当プロジェクトが見つかりません（cwd 不一致）");
+      else if (continuing && r.char_count === 0)
+        toast("前回記事より後の会話がありません。", { icon: "ℹ️" });
       else {
         setResult(r);
         toast.success(
@@ -282,11 +326,27 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
             truncated: result.truncated,
             options: {
               include_tool_calls: includeToolCalls,
-              latest_only: latestOnly,
+              latest_only: continuing ? false : latestOnly,
+              since: sinceIso,
               max_chars: maxChars,
             },
+            continued_from: continuing
+              ? Object.fromEntries(seriesPlatforms.map((p) => [p, previous[p]!.id]))
+              : undefined,
           },
           targetLength,
+          previous: continuing
+            ? Object.fromEntries(
+                seriesPlatforms.map((p) => [
+                  p,
+                  {
+                    title: previous[p]!.title,
+                    body: previous[p]!.body,
+                    url: previous[p]!.qiita_url,
+                  },
+                ]),
+              )
+            : undefined,
         },
         platformList,
         (s) => {
@@ -352,9 +412,9 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={latestOnly}
+              checked={continuing ? false : latestOnly}
               onChange={(e) => setLatestOnly(e.target.checked)}
-              disabled={busy}
+              disabled={busy || continuing}
             />
             最新セッションのみ
           </label>
@@ -395,6 +455,39 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
             </select>
           </label>
         </div>
+
+        {Object.keys(previous).length > 0 && (
+          <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm space-y-1">
+            <label className="flex items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={continueSeries}
+                onChange={(e) => {
+                  setContinueSeries(e.target.checked);
+                  setResult(null); // 素材の範囲が変わるので読み直し
+                }}
+                disabled={busy}
+              />
+              前回の続きとして書く
+            </label>
+            {(["qiita", "note"] as const).map((p) =>
+              previous[p] ? (
+                <div
+                  key={p}
+                  className={`text-xs ${platforms.has(p) ? "text-gray-600" : "text-gray-400 line-through"}`}
+                >
+                  {p === "qiita" ? "📘 Qiita" : "📝 note"} 前回:『{previous[p]!.title}』（
+                  {new Date(previous[p]!.created_at).toLocaleString("ja-JP")}）
+                </div>
+              ) : null,
+            )}
+            {continuing && (
+              <div className="text-xs text-gray-500">
+                素材は前回記事より後の会話のみ。前回の内容は繰り返さず続編として生成します。
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           className="btn-primary"
