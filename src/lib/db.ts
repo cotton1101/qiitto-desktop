@@ -328,11 +328,12 @@ export interface PreviousDraft {
   created_at: string;
 }
 
-/** 同じ Claude Code プロジェクト・同じ投稿先で最後に生成した下書き（無ければ null）。 */
-export async function findPreviousDraft(
+/** 同じ Claude Code プロジェクト・同じ投稿先で生成した下書き（新しい順）。続編の元記事の候補。 */
+export async function listPreviousDrafts(
   projectPath: string,
   platform: Platform,
-): Promise<PreviousDraft | null> {
+  limit = 20,
+): Promise<PreviousDraft[]> {
   const conn = await db();
   const rows = await conn.select<PreviousDraft[]>(
     `SELECT d.id, d.title, d.body, d.qiita_url, d.created_at
@@ -342,10 +343,9 @@ export async function findPreviousDraft(
      WHERE s.source_type = 'claude_log'
        AND json_extract(s.metadata, '$.project_path') = ?
        AND d.platform = ?
-     ORDER BY d.created_at DESC LIMIT 1`,
-    [projectPath, platform],
+     ORDER BY d.created_at DESC LIMIT ?`,
+    [projectPath, platform, limit],
   );
-  const r = rows[0];
   // SQLite の datetime('now') は "YYYY-MM-DD HH:MM:SS"（UTC）
-  return r ? { ...r, created_at: `${r.created_at.replace(" ", "T")}Z` } : null;
+  return rows.map((r) => ({ ...r, created_at: `${r.created_at.replace(" ", "T")}Z` }));
 }

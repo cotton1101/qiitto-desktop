@@ -24,7 +24,7 @@ import {
   markGenerationDone,
   markGenerationError,
   insertDraft,
-  findPreviousDraft,
+  listPreviousDrafts,
   PreviousDraft,
 } from "../lib/db";
 
@@ -221,28 +221,37 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
   const [result, setResult] = useState<ClaudeLogResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string>("");
-  const [previous, setPrevious] = useState<Partial<Record<Platform, PreviousDraft>>>({});
+  // 続編の元記事の候補（新しい順）と、投稿先ごとに選んだ元記事 id（"" は続けない）
+  const [candidates, setCandidates] = useState<Record<Platform, PreviousDraft[]>>({
+    qiita: [],
+    note: [],
+  });
+  const [chosenId, setChosenId] = useState<Record<Platform, string>>({ qiita: "", note: "" });
   const [continueSeries, setContinueSeries] = useState(true);
 
-  // 選択中プロジェクトの前回記事（Qiita / note それぞれ）
+  // 選択中プロジェクトの過去記事（Qiita / note それぞれ）。既定は最新の記事
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
     (async () => {
       const [qiita, note] = await Promise.all([
-        findPreviousDraft(selected, "qiita"),
-        findPreviousDraft(selected, "note"),
+        listPreviousDrafts(selected, "qiita"),
+        listPreviousDrafts(selected, "note"),
       ]);
       if (cancelled) return;
-      const next: Partial<Record<Platform, PreviousDraft>> = {};
-      if (qiita) next.qiita = qiita;
-      if (note) next.note = note;
-      setPrevious(next);
+      setCandidates({ qiita, note });
+      setChosenId({ qiita: qiita[0]?.id ?? "", note: note[0]?.id ?? "" });
     })().catch((e) => toast.error(`前回記事の取得失敗: ${e}`));
     return () => {
       cancelled = true;
     };
   }, [selected]);
+
+  const previous: Partial<Record<Platform, PreviousDraft>> = {};
+  for (const p of ["qiita", "note"] as const) {
+    const d = candidates[p].find((c) => c.id === chosenId[p]);
+    if (d) previous[p] = d;
+  }
 
   const seriesPlatforms = Array.from(platforms).filter((p) => previous[p]);
   const continuing = continueSeries && seriesPlatforms.length > 0;
@@ -456,7 +465,7 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
           </label>
         </div>
 
-        {Object.keys(previous).length > 0 && (
+        {(candidates.qiita.length > 0 || candidates.note.length > 0) && (
           <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm space-y-1">
             <label className="flex items-center gap-2 font-medium">
               <input
@@ -471,19 +480,33 @@ function ClaudeLogTab({ platforms }: { platforms: Set<Platform> }) {
               前回の続きとして書く
             </label>
             {(["qiita", "note"] as const).map((p) =>
-              previous[p] ? (
-                <div
+              candidates[p].length > 0 ? (
+                <label
                   key={p}
-                  className={`text-xs ${platforms.has(p) ? "text-gray-600" : "text-gray-400 line-through"}`}
+                  className={`flex items-center gap-2 text-xs ${platforms.has(p) ? "text-gray-600" : "text-gray-400"}`}
                 >
-                  {p === "qiita" ? "📘 Qiita" : "📝 note"} 前回:『{previous[p]!.title}』（
-                  {new Date(previous[p]!.created_at).toLocaleString("ja-JP")}）
-                </div>
+                  <span className="shrink-0">
+                    {p === "qiita" ? "📘 Qiita" : "📝 note"} の続き元:
+                  </span>
+                  <select
+                    className="input !py-1 !text-xs"
+                    value={chosenId[p]}
+                    onChange={(e) => setChosenId({ ...chosenId, [p]: e.target.value })}
+                    disabled={busy || !continueSeries || !platforms.has(p)}
+                  >
+                    <option value="">（続けない・最初から書く）</option>
+                    {candidates[p].map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {new Date(c.created_at).toLocaleString("ja-JP")}『{c.title}』
+                      </option>
+                    ))}
+                  </select>
+                </label>
               ) : null,
             )}
             {continuing && (
               <div className="text-xs text-gray-500">
-                素材は前回記事より後の会話のみ。前回の内容は繰り返さず続編として生成します。
+                素材は {new Date(sinceIso!).toLocaleString("ja-JP")} 以降の会話のみ。選んだ記事の内容は繰り返さず続編として生成します。
               </div>
             )}
           </div>
